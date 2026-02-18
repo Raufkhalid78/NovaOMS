@@ -124,7 +124,12 @@ export const KioskView: React.FC<KioskViewProps> = ({
 
     setIsProcessing(true);
     try {
-        const ticket = await Promise.resolve(onJoinQueue(name, selectedServiceId, phone)); // Ensure promise handling
+        // Concatenate country code if available and phone is entered
+        const fullPhone = (phone && systemSettings?.countryCode) 
+            ? `${systemSettings.countryCode}${phone.replace(/^0+/, '')}` // remove leading zeros if any
+            : phone;
+
+        const ticket = await Promise.resolve(onJoinQueue(name, selectedServiceId, fullPhone)); 
         setGeneratedTicket(ticket);
         setStep(3);
         
@@ -394,18 +399,26 @@ export const KioskView: React.FC<KioskViewProps> = ({
               
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Mobile Number <span className="text-slate-400 font-normal">(Optional, for WhatsApp)</span>
+                  Mobile Number <span className="text-slate-400 font-normal">(Optional)</span>
                 </label>
-                <div className="relative">
-                  <Smartphone className="absolute left-4 top-3.5 w-5 h-5 text-slate-400 dark:text-slate-500" />
-                  <input
-                    type="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className="w-full pl-12 pr-4 py-3 rounded-xl border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-                    placeholder="555-0123"
-                  />
+                <div className="relative flex">
+                  {systemSettings?.countryCode && (
+                     <div className="flex items-center justify-center px-3 border border-r-0 border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-700/50 rounded-l-xl text-slate-500 dark:text-slate-400 font-medium">
+                         {systemSettings.countryCode}
+                     </div>
+                  )}
+                  <div className="relative flex-1">
+                    <Smartphone className="absolute left-3 top-3.5 w-5 h-5 text-slate-400 dark:text-slate-500" />
+                    <input
+                        type="tel"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value.replace(/\D/g,''))}
+                        className={`w-full pl-10 pr-4 py-3 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all ${systemSettings?.countryCode ? 'rounded-r-xl border-l-0' : 'rounded-xl'}`}
+                        placeholder="5550123"
+                    />
+                  </div>
                 </div>
+                <p className="text-xs text-slate-400 mt-2">We can send you WhatsApp notifications.</p>
               </div>
 
               <div className="flex gap-4 pt-4">

@@ -26,7 +26,8 @@ const DEFAULT_SETTINGS: SystemSettings = {
     enabled: true,
     start: "09:00",
     end: "17:00"
-  }
+  },
+  countryCode: "+1"
 };
 
 const App: React.FC = () => {
@@ -149,7 +150,8 @@ const App: React.FC = () => {
                 autoNotify15m: settingsData.auto_notify_15m,
                 allowMobileEntry: settingsData.allow_mobile_entry,
                 mobileEntryUrl: settingsData.mobile_entry_url,
-                operatingHours: settingsData.operating_hours
+                operatingHours: settingsData.operating_hours,
+                countryCode: settingsData.country_code || "+1"
             });
         }
       } catch (e) {
@@ -223,7 +225,8 @@ const App: React.FC = () => {
                 autoNotify15m: s.auto_notify_15m,
                 allowMobileEntry: s.allow_mobile_entry,
                 mobileEntryUrl: s.mobile_entry_url,
-                operatingHours: s.operating_hours
+                operatingHours: s.operating_hours,
+                countryCode: s.country_code || "+1"
             });
         })
         .subscribe();
@@ -456,7 +459,8 @@ const App: React.FC = () => {
             auto_notify_15m: newSettings.autoNotify15m,
             allow_mobile_entry: newSettings.allowMobileEntry,
             mobile_entry_url: newSettings.mobileEntryUrl,
-            operating_hours: newSettings.operatingHours
+            operating_hours: newSettings.operatingHours,
+            country_code: newSettings.countryCode
         }).eq('id', 1);
 
         if (error) console.error("Error updating settings:", error);
@@ -616,7 +620,7 @@ const App: React.FC = () => {
 
     return newTicket;
   };
-
+  // ... rest of logic remains same
   const handleCancelTicket = async (ticketId: string) => {
     setTickets(prev => prev.map(t => t.id === ticketId ? { ...t, status: TicketStatus.CANCELLED } : t));
     if (isDemoMode) return;
@@ -799,7 +803,7 @@ const App: React.FC = () => {
           isDarkMode={isDarkMode}
         />
       );
-
+    // ... rest of switch
     case UserRole.KIOSK:
       return (
         <KioskView 

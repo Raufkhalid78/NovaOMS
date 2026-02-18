@@ -61,42 +61,48 @@ export const DisplayView: React.FC<DisplayViewProps> = ({ tickets, counters, ser
   useEffect(() => {
     const calculateWaitTimes = () => {
       const now = Date.now();
-      const completedTickets = tickets.filter(t => t.status === TicketStatus.COMPLETED && t.servedAt && t.completedAt);
       
-      // 1. Calculate Average Service Time per Service
-      const avgs: Record<string, number> = {};
-      
+      const currentlyServing = tickets.filter(t => t.status === TicketStatus.SERVING);
+      const allWaiting = tickets.filter(t => t.status === TicketStatus.WAITING);
+
+      // Optimization: If system is completely empty, show 0 wait time
+      if (currentlyServing.length === 0 && allWaiting.length === 0) {
+        const zeroEstimates: Record<string, number> = {};
+        services.forEach(s => zeroEstimates[s.id] = 0);
+        setServiceEstimates(zeroEstimates);
+        return;
+      }
+
+      // 1. Define Standard Service Time per Service (Use Configured Default Only)
+      const standardTimes: Record<string, number> = {};
       services.forEach(service => {
-         const typeCompleted = completedTickets.filter(t => t.serviceId === service.id);
-         if (typeCompleted.length > 0) {
-            const total = typeCompleted.reduce((acc, t) => acc + (t.completedAt! - t.servedAt!), 0);
-            avgs[service.id] = total / typeCompleted.length;
-         } else {
-            // Use configured default wait time, fallback to 5 mins
-            avgs[service.id] = (service.defaultWaitTime || 5) * 60 * 1000;
-         }
+         // Using defaultWaitTime directly as requested, ignoring historical averages
+         standardTimes[service.id] = (service.defaultWaitTime || 5) * 60 * 1000;
       });
 
       // 2. Calculate remaining time for currently serving tickets
       const activeCountersCount = counters.filter(c => c.isOpen).length || 1;
-      const currentlyServing = tickets.filter(t => t.status === TicketStatus.SERVING);
 
       const servingBacklog = currentlyServing.reduce((acc, t) => {
-        if (!t.servedAt) return acc + (avgs[t.serviceId] || 300000);
+        // If ticket served time is missing or in future, assume full standard duration
+        if (!t.servedAt || t.servedAt > now) return acc + (standardTimes[t.serviceId] || 300000);
+        
         const elapsed = now - t.servedAt;
-        const avg = avgs[t.serviceId] || 300000;
-        const remaining = Math.max(60 * 1000, avg - elapsed); 
+        const duration = standardTimes[t.serviceId] || 300000;
+        // Assume at least 30 seconds remaining even if overdue
+        const remaining = Math.max(30000, duration - elapsed); 
         return acc + remaining;
       }, 0);
 
-      // 3. Calculate total waiting backlog
-      const allWaiting = tickets.filter(t => t.status === TicketStatus.WAITING);
-      const waitingBacklog = allWaiting.reduce((acc, t) => acc + (avgs[t.serviceId] || 300000), 0);
+      // 3. Calculate total waiting backlog using standard times
+      const waitingBacklog = allWaiting.reduce((acc, t) => acc + (standardTimes[t.serviceId] || 300000), 0);
 
       // 4. Total backlog / Active Counters
       const totalBacklog = servingBacklog + waitingBacklog;
       const estTimeMs = totalBacklog / activeCountersCount;
-      const estMinutes = Math.max(1, Math.ceil(estTimeMs / 60000));
+      
+      // Round up to nearest minute
+      const estMinutes = Math.ceil(estTimeMs / 60000);
 
       const newEstimates: Record<string, number> = {};
       services.forEach(service => {
@@ -107,7 +113,7 @@ export const DisplayView: React.FC<DisplayViewProps> = ({ tickets, counters, ser
     };
 
     calculateWaitTimes();
-    const interval = setInterval(calculateWaitTimes, 30000);
+    const interval = setInterval(calculateWaitTimes, 5000); 
     return () => clearInterval(interval);
 
   }, [tickets, counters, services]);
@@ -232,7 +238,7 @@ export const DisplayView: React.FC<DisplayViewProps> = ({ tickets, counters, ser
                   <div className={`absolute left-0 top-0 bottom-0 w-1 ${getServiceColorClass(service.id).split(' ')[0].replace('bg-', 'bg-')}`}></div>
                   <span className="text-[10px] text-slate-500 dark:text-slate-500 uppercase tracking-wider mb-1 truncate pl-2">{service.name}</span>
                   <div className="flex items-baseline gap-1 pl-2">
-                    <span className="text-lg md:text-xl font-bold text-slate-800 dark:text-white transition-all duration-500">{serviceEstimates[service.id] || 1}</span>
+                    <span className="text-lg md:text-xl font-bold text-slate-800 dark:text-white transition-all duration-500">{serviceEstimates[service.id] || 0}</span>
                     <span className="text-[10px] md:text-xs text-slate-400">min</span>
                   </div>
                </div>

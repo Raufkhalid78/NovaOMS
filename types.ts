@@ -70,4 +70,5 @@ export interface SystemSettings {
     start: string; // "09:00" (24h format)
     end: string;   // "17:00" (24h format)
   };
+  countryCode: string; // e.g., "+1"
 }

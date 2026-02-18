@@ -73,6 +73,7 @@ FOREIGN KEY (current_ticket_id) REFERENCES tickets(id) ON DELETE SET NULL;
 
 -- System Settings (Singleton Table)
 -- Updated operating_hours to JSONB to match React frontend structure
+-- Added country_code column
 CREATE TABLE system_settings (
     id INTEGER PRIMARY KEY CHECK (id = 1), -- Ensure only one row
     whatsapp_enabled BOOLEAN DEFAULT TRUE,
@@ -81,7 +82,8 @@ CREATE TABLE system_settings (
     auto_notify_15m BOOLEAN DEFAULT FALSE, -- New column for auto notification toggle
     allow_mobile_entry BOOLEAN DEFAULT TRUE,
     mobile_entry_url TEXT,
-    operating_hours JSONB DEFAULT '{"enabled": true, "start": "09:00", "end": "17:00"}'::jsonb
+    operating_hours JSONB DEFAULT '{"enabled": true, "start": "09:00", "end": "17:00"}'::jsonb,
+    country_code TEXT DEFAULT '+1'
 );
 
 -- 3. ROW LEVEL SECURITY (RLS)
@@ -128,8 +130,8 @@ INSERT INTO counters (id, is_open) VALUES
 (1, true), (2, true), (3, true), (4, true);
 
 -- Settings
-INSERT INTO system_settings (id, whatsapp_template, operating_hours) VALUES 
-(1, 'Hello {name}, your turn for {service} is coming up! Your ticket number is {number}. Please proceed to Counter {counter}.', '{"enabled": true, "start": "09:00", "end": "17:00"}'::jsonb);
+INSERT INTO system_settings (id, whatsapp_template, operating_hours, country_code) VALUES 
+(1, 'Hello {name}, your turn for {service} is coming up! Your ticket number is {number}. Please proceed to Counter {counter}.', '{"enabled": true, "start": "09:00", "end": "17:00"}'::jsonb, '+1');
 
 
 -- 6. AUTOMATED MIDNIGHT RESET (Database Level)
@@ -138,10 +140,11 @@ CREATE OR REPLACE FUNCTION reset_daily_queue()
 RETURNS void AS $$
 BEGIN
   -- 1. Archive or Delete Tickets
-  DELETE FROM tickets;
+  -- Fixed: Added 'WHERE 1=1' to satisfy safe update policies in strict SQL environments
+  DELETE FROM tickets WHERE 1=1;
 
   -- 2. Reset Counters
-  UPDATE counters SET current_ticket_id = NULL;
+  UPDATE counters SET current_ticket_id = NULL WHERE 1=1;
 END;
 $$ LANGUAGE plpgsql;
 
