@@ -1,11 +1,11 @@
 
 -- Enable necessary extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "pg_cron"; -- Required for midnight reset
+-- CREATE EXTENSION IF NOT EXISTS "pg_cron"; -- Cron no longer required for manual operation
 
 -- 0. CLEANUP (Destructive: Drops existing tables to allow a clean reset)
 DROP TABLE IF EXISTS system_settings CASCADE;
-DROP TABLE IF EXISTS counters CASCADE; -- Drop counters before tickets due to circular dependency usually, but CASCADE handles it
+DROP TABLE IF EXISTS counters CASCADE; 
 DROP TABLE IF EXISTS tickets CASCADE;
 DROP TABLE IF EXISTS services CASCADE;
 DROP TABLE IF EXISTS app_users CASCADE;
@@ -20,7 +20,6 @@ CREATE TYPE ticket_status AS ENUM ('WAITING', 'SERVING', 'COMPLETED', 'CANCELLED
 -- 2. TABLES
 
 -- Users Table
--- Changed ID to TEXT to support 'admin_1' style legacy IDs from constants.ts
 CREATE TABLE app_users (
     id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
     username TEXT UNIQUE NOT NULL,
@@ -31,13 +30,12 @@ CREATE TABLE app_users (
 );
 
 -- Services Table
--- Added default_wait_time
 CREATE TABLE services (
     id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
     name TEXT NOT NULL,
     prefix TEXT NOT NULL, -- e.g., 'A', 'B'
     color_theme TEXT NOT NULL DEFAULT 'blue',
-    default_wait_time INTEGER DEFAULT 5, -- Default wait time in minutes
+    default_wait_time INTEGER DEFAULT 5, 
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -56,13 +54,13 @@ CREATE TABLE tickets (
     name TEXT NOT NULL,
     phone TEXT,
     service_id TEXT REFERENCES services(id) ON DELETE CASCADE,
-    service_name TEXT, -- Denormalized for easier display/archiving
+    service_name TEXT, 
     status ticket_status DEFAULT 'WAITING',
     joined_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     served_at TIMESTAMP WITH TIME ZONE,
     completed_at TIMESTAMP WITH TIME ZONE,
     counter_id INTEGER REFERENCES counters(id),
-    notification_sent BOOLEAN DEFAULT FALSE, -- New column for auto-notification tracking
+    notification_sent BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -71,15 +69,13 @@ ALTER TABLE counters
 ADD CONSTRAINT fk_current_ticket 
 FOREIGN KEY (current_ticket_id) REFERENCES tickets(id) ON DELETE SET NULL;
 
--- System Settings (Singleton Table)
--- Updated operating_hours to JSONB to match React frontend structure
--- Added country_code column
+-- System Settings
 CREATE TABLE system_settings (
     id INTEGER PRIMARY KEY CHECK (id = 1), -- Ensure only one row
     whatsapp_enabled BOOLEAN DEFAULT TRUE,
     whatsapp_template TEXT,
     whatsapp_api_key TEXT,
-    auto_notify_15m BOOLEAN DEFAULT FALSE, -- New column for auto notification toggle
+    auto_notify_15m BOOLEAN DEFAULT FALSE,
     allow_mobile_entry BOOLEAN DEFAULT TRUE,
     mobile_entry_url TEXT,
     operating_hours JSONB DEFAULT '{"enabled": true, "start": "09:00", "end": "17:00"}'::jsonb,
@@ -87,14 +83,12 @@ CREATE TABLE system_settings (
 );
 
 -- 3. ROW LEVEL SECURITY (RLS)
-
 ALTER TABLE app_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE services ENABLE ROW LEVEL SECURITY;
 ALTER TABLE counters ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tickets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE system_settings ENABLE ROW LEVEL SECURITY;
 
--- Allow all operations for public (mimicking local dev environment)
 CREATE POLICY "Allow public access to users" ON app_users FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow public access to services" ON services FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow public access to counters" ON counters FOR ALL USING (true) WITH CHECK (true);
@@ -102,22 +96,18 @@ CREATE POLICY "Allow public access to tickets" ON tickets FOR ALL USING (true) W
 CREATE POLICY "Allow public access to settings" ON system_settings FOR ALL USING (true) WITH CHECK (true);
 
 -- 4. REALTIME SETUP
--- Note: You might need to re-enable realtime in Supabase Dashboard if this fails, or remove these lines if handled by dashboard
 ALTER PUBLICATION supabase_realtime ADD TABLE tickets;
 ALTER PUBLICATION supabase_realtime ADD TABLE counters;
 ALTER PUBLICATION supabase_realtime ADD TABLE services;
 ALTER PUBLICATION supabase_realtime ADD TABLE system_settings;
 
 -- 5. SEED DATA
-
--- Services (Using IDs from constants.ts with default wait times)
 INSERT INTO services (id, name, prefix, color_theme, default_wait_time) VALUES
 ('srv_1', 'General Inquiry', 'A', 'blue', 5),
 ('srv_2', 'Bill Payment', 'B', 'emerald', 3),
 ('srv_3', 'Technical Support', 'C', 'amber', 15),
 ('srv_4', 'VIP Services', 'V', 'purple', 10);
 
--- Users (Using IDs from constants.ts)
 INSERT INTO app_users (id, username, password, name, role) VALUES
 ('admin_1', 'admin', '1234', 'System Administrator', 'ADMIN'),
 ('staff_1', 'staff1', '12345', 'Counter 1 Staff', 'STAFF'),
@@ -125,22 +115,28 @@ INSERT INTO app_users (id, username, password, name, role) VALUES
 ('kiosk_1', 'kiosk', '12345', 'Main Kiosk', 'KIOSK'),
 ('display_1', 'display', '12345', 'Main Display', 'DISPLAY');
 
--- Counters (1 to 4)
 INSERT INTO counters (id, is_open) VALUES
 (1, true), (2, true), (3, true), (4, true);
 
--- Settings
 INSERT INTO system_settings (id, whatsapp_template, operating_hours, country_code) VALUES 
 (1, 'Hello {name}, your turn for {service} is coming up! Your ticket number is {number}. Please proceed to Counter {counter}.', '{"enabled": true, "start": "09:00", "end": "17:00"}'::jsonb, '+1');
 
 
--- 6. AUTOMATED MIDNIGHT RESET (Database Level)
+-- 6. MANUAL RESET FUNCTIONS
 
+-- Function to Reset All Statistics (Deletes completed history, keeps active queue)
+CREATE OR REPLACE FUNCTION clear_history_stats()
+RETURNS void AS $$
+BEGIN
+  DELETE FROM tickets WHERE status IN ('COMPLETED', 'CANCELLED', 'NO_SHOW');
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to Wipe Entire System (Deletes everything)
 CREATE OR REPLACE FUNCTION reset_daily_queue()
 RETURNS void AS $$
 BEGIN
   -- 1. Archive or Delete Tickets
-  -- Fixed: Added 'WHERE 1=1' to satisfy safe update policies in strict SQL environments
   DELETE FROM tickets WHERE 1=1;
 
   -- 2. Reset Counters
@@ -148,6 +144,4 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Schedule the cron job for 00:00 (Midnight) every day
--- NOTE: Requires pg_cron extension enabled in Supabase Dashboard
-SELECT cron.schedule('midnight-reset', '0 0 * * *', 'SELECT reset_daily_queue()');
+-- Removed automated cron schedule to prevent midnight deletion

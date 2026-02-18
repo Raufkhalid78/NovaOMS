@@ -12,7 +12,6 @@ import { LogOut, Monitor, Sun, Moon, Loader2 } from 'lucide-react';
 
 const SESSION_KEY = 'nova_session';
 const THEME_KEY = 'nova_theme';
-const RESET_KEY = 'nova_last_reset';
 const SESSION_DURATION = 2 * 60 * 60 * 1000; // 2 hours in ms
 
 const DEFAULT_SETTINGS: SystemSettings = {
@@ -242,35 +241,6 @@ const App: React.FC = () => {
       if (settingsSub) supabase.removeChannel(settingsSub);
     };
   }, []);
-
-  // --- AUTOMATED DAILY RESET LOGIC ---
-  useEffect(() => {
-    const checkAndPerformReset = async () => {
-      if (isDemoMode) return;
-      const today = new Date().toDateString();
-      const lastResetDate = localStorage.getItem(RESET_KEY);
-
-      if (lastResetDate !== today) {
-        console.log("Date change detected. Performing daily system reset...", today);
-        
-        try {
-            const { error } = await supabase.rpc('reset_daily_queue');
-            if (error) {
-                console.error("Failed to reset daily queue:", error);
-            } else {
-                localStorage.setItem(RESET_KEY, today);
-                console.log("Daily reset successful");
-            }
-        } catch (e) {
-            console.error("Error executing reset RPC:", e);
-        }
-      }
-    };
-
-    checkAndPerformReset();
-    const intervalId = setInterval(checkAndPerformReset, 60000);
-    return () => clearInterval(intervalId);
-  }, [isDemoMode]);
 
   // --- AUTOMATED NOTIFICATION LOGIC (Ending Sessions) ---
   useEffect(() => {
@@ -557,6 +527,30 @@ const App: React.FC = () => {
       if (error) console.error("Error deleting service:", error);
   };
 
+  // --- Manual Reset Handlers ---
+  const handleFullReset = async () => {
+      if(isDemoMode) { 
+          setTickets([]); 
+          setCounters(prev => prev.map(c => ({...c, currentTicketId: null})));
+          return; 
+      }
+      const { error } = await supabase.rpc('reset_daily_queue');
+      if (error) console.error("Error performing full reset:", error);
+      // Local state will update via realtime DELETE event, but we can optimistically clear
+      setTickets([]);
+      setCounters(prev => prev.map(c => ({...c, currentTicketId: null})));
+  }
+
+  const handleResetStats = async () => {
+      if(isDemoMode) { 
+          setTickets(prev => prev.filter(t => t.status === TicketStatus.WAITING || t.status === TicketStatus.SERVING)); 
+          return; 
+      }
+      const { error } = await supabase.rpc('clear_history_stats');
+      if (error) console.error("Error resetting stats:", error);
+      // Local state will update via realtime
+  }
+
   // --- Queue Logic Handlers ---
   const handleJoinQueue = async (name: string, serviceId: string, phone: string) => {
     const service = services.find(s => s.id === serviceId);
@@ -810,6 +804,8 @@ const App: React.FC = () => {
           onLogout={handleLogout}
           toggleTheme={handleToggleTheme}
           isDarkMode={isDarkMode}
+          onFullReset={handleFullReset}
+          onResetStats={handleResetStats}
         />
       );
     // ... rest of switch

@@ -33,7 +33,9 @@ import {
   X,
   Upload,
   Calendar,
-  Globe
+  Globe,
+  Database,
+  RotateCcw
 } from 'lucide-react';
 
 interface AdminViewProps {
@@ -53,6 +55,8 @@ interface AdminViewProps {
   onLogout: () => void;
   toggleTheme: () => void;
   isDarkMode: boolean;
+  onFullReset: () => void;
+  onResetStats: () => void;
 }
 
 export const AdminView: React.FC<AdminViewProps> = ({
@@ -71,7 +75,9 @@ export const AdminView: React.FC<AdminViewProps> = ({
   onDeleteService,
   onLogout,
   toggleTheme,
-  isDarkMode
+  isDarkMode,
+  onFullReset,
+  onResetStats
 }) => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'services' | 'users' | 'integrations' | 'profile'>('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -240,6 +246,18 @@ export const AdminView: React.FC<AdminViewProps> = ({
       };
       reader.readAsDataURL(e.target.files[0]);
     }
+  };
+  
+  const handleConfirmFullReset = () => {
+      if (window.confirm("CRITICAL WARNING: This will delete ALL tickets and queue history from the database.\n\nThis action cannot be undone. Are you sure you want to completely wipe the system?")) {
+          onFullReset();
+      }
+  };
+
+  const handleConfirmStatsReset = () => {
+      if (window.confirm("This will clear the history of completed and cancelled tickets for today, resetting the dashboard statistics to zero.\n\nActive tickets in the queue will NOT be deleted.\n\nContinue?")) {
+          onResetStats();
+      }
   };
   
   // ... (Effect for QR generation remains the same) ...
@@ -790,6 +808,51 @@ export const AdminView: React.FC<AdminViewProps> = ({
                 <div>
                     <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Integrations & Settings</h1>
                     <p className="text-slate-500 dark:text-slate-400">Configure external connections, mobile entry, and shop timings.</p>
+                </div>
+
+                {/* NEW: Data Management Section */}
+                <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+                    <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100 dark:border-slate-700">
+                        <div className="p-2 bg-rose-100 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 rounded-lg">
+                            <Database className="w-6 h-6" />
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-slate-800 dark:text-white">Data Management</h3>
+                            <p className="text-xs text-slate-500">Manual control over system records</p>
+                        </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 flex flex-col justify-between">
+                            <div>
+                                <h4 className="font-semibold text-slate-800 dark:text-white mb-1">Remove All Entries</h4>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+                                    Completely wipes the entire database of active queues and historical data. Use for factory reset or fresh start.
+                                </p>
+                            </div>
+                            <button 
+                                onClick={handleConfirmFullReset}
+                                className="w-full py-2 bg-red-600 text-white rounded-lg text-sm font-bold hover:bg-red-700 transition flex items-center justify-center gap-2"
+                            >
+                                <Trash2 className="w-4 h-4" /> Remove All Tickets
+                            </button>
+                        </div>
+
+                        <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 flex flex-col justify-between">
+                            <div>
+                                <h4 className="font-semibold text-slate-800 dark:text-white mb-1">Reset Statistics</h4>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+                                    Clears completed/cancelled tickets to reset the dashboard numbers, but keeps the current active queue running.
+                                </p>
+                            </div>
+                            <button 
+                                onClick={handleConfirmStatsReset}
+                                className="w-full py-2 bg-amber-500 text-white rounded-lg text-sm font-bold hover:bg-amber-600 transition flex items-center justify-center gap-2"
+                            >
+                                <RotateCcw className="w-4 h-4" /> Reset Dashboard Stats
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
