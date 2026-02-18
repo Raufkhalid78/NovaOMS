@@ -36,6 +36,7 @@ const App: React.FC = () => {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [counters, setCounters] = useState<CounterState[]>([]);
   const [systemSettings, setSystemSettings] = useState<SystemSettings>(DEFAULT_SETTINGS);
+  const [isDemoMode, setIsDemoMode] = useState(false);
   
   const [isLoading, setIsLoading] = useState(true);
 
@@ -94,17 +95,20 @@ const App: React.FC = () => {
 
   // --- INITIAL DATA FETCH & REALTIME ---
   useEffect(() => {
+    let mounted = true;
     const fetchData = async () => {
       setIsLoading(true);
       try {
         // 1. Fetch Users
         const { data: usersData, error: usersError } = await supabase.from('app_users').select('*');
+        if (usersError) throw usersError;
+        
         if (usersData && usersData.length > 0) {
             setUsers(usersData.map(mapDbUserToApp));
         } else {
-            // Fallback for demo mode if DB is empty or fails
             console.warn("Using mock users due to DB error or empty table");
             setUsers(INITIAL_USERS);
+            setIsDemoMode(true);
         }
 
         // 2. Fetch Services
@@ -149,76 +153,87 @@ const App: React.FC = () => {
         // Ensure app works even if everything fails
         setUsers(INITIAL_USERS);
         setServices(INITIAL_SERVICES);
+        // Mock counters
+        const mocks: CounterState[] = [];
+        for(let i=1; i<=TOTAL_COUNTERS; i++) {
+            mocks.push({ id: i, isOpen: true, currentTicketId: null });
+        }
+        setCounters(mocks);
+        setIsDemoMode(true);
       } finally {
-        setIsLoading(false);
+        if (mounted) setIsLoading(false);
       }
     };
 
     fetchData();
 
     // --- REALTIME SUBSCRIPTIONS ---
-    
-    // Tickets Channel
-    const ticketSub = supabase.channel('tickets-channel')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, (payload) => {
-        if (payload.eventType === 'INSERT') {
-          setTickets(prev => [...prev, mapDbTicketToApp(payload.new)]);
-        } else if (payload.eventType === 'UPDATE') {
-          setTickets(prev => prev.map(t => t.id === payload.new.id ? mapDbTicketToApp(payload.new) : t));
-        } else if (payload.eventType === 'DELETE') {
-          setTickets(prev => prev.filter(t => t.id !== payload.old.id));
-        }
-      })
-      .subscribe();
+    // Only subscribe if not in demo/fallback mode
+    let ticketSub: any, counterSub: any, serviceSub: any, settingsSub: any;
 
-    // Counters Channel
-    const counterSub = supabase.channel('counters-channel')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'counters' }, (payload) => {
-        if (payload.eventType === 'UPDATE') {
-           setCounters(prev => prev.map(c => c.id === payload.new.id ? mapDbCounterToApp(payload.new) : c));
-        }
-      })
-      .subscribe();
+    try {
+        ticketSub = supabase.channel('tickets-channel')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, (payload) => {
+            if (payload.eventType === 'INSERT') {
+            setTickets(prev => [...prev, mapDbTicketToApp(payload.new)]);
+            } else if (payload.eventType === 'UPDATE') {
+            setTickets(prev => prev.map(t => t.id === payload.new.id ? mapDbTicketToApp(payload.new) : t));
+            } else if (payload.eventType === 'DELETE') {
+            setTickets(prev => prev.filter(t => t.id !== payload.old.id));
+            }
+        })
+        .subscribe();
 
-    // Services Channel
-    const serviceSub = supabase.channel('services-channel')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, (payload) => {
-          if(payload.eventType === 'INSERT') {
-              setServices(prev => [...prev, mapDbServiceToApp(payload.new)]);
-          } else if(payload.eventType === 'UPDATE') {
-              setServices(prev => prev.map(s => s.id === payload.new.id ? mapDbServiceToApp(payload.new) : s));
-          } else if(payload.eventType === 'DELETE') {
-              setServices(prev => prev.filter(s => s.id !== payload.old.id));
-          }
-      })
-      .subscribe();
-    
-    // Settings Channel
-    const settingsSub = supabase.channel('settings-channel')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'system_settings' }, (payload) => {
-         const s = payload.new;
-         setSystemSettings({
-             whatsappEnabled: s.whatsapp_enabled,
-             whatsappTemplate: s.whatsapp_template,
-             whatsappApiKey: s.whatsapp_api_key,
-             allowMobileEntry: s.allow_mobile_entry,
-             mobileEntryUrl: s.mobile_entry_url,
-             operatingHours: s.operating_hours
-         });
-      })
-      .subscribe();
+        counterSub = supabase.channel('counters-channel')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'counters' }, (payload) => {
+            if (payload.eventType === 'UPDATE') {
+            setCounters(prev => prev.map(c => c.id === payload.new.id ? mapDbCounterToApp(payload.new) : c));
+            }
+        })
+        .subscribe();
+
+        serviceSub = supabase.channel('services-channel')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, (payload) => {
+            if(payload.eventType === 'INSERT') {
+                setServices(prev => [...prev, mapDbServiceToApp(payload.new)]);
+            } else if(payload.eventType === 'UPDATE') {
+                setServices(prev => prev.map(s => s.id === payload.new.id ? mapDbServiceToApp(payload.new) : s));
+            } else if(payload.eventType === 'DELETE') {
+                setServices(prev => prev.filter(s => s.id !== payload.old.id));
+            }
+        })
+        .subscribe();
+        
+        settingsSub = supabase.channel('settings-channel')
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'system_settings' }, (payload) => {
+            const s = payload.new;
+            setSystemSettings({
+                whatsappEnabled: s.whatsapp_enabled,
+                whatsappTemplate: s.whatsapp_template,
+                whatsappApiKey: s.whatsapp_api_key,
+                allowMobileEntry: s.allow_mobile_entry,
+                mobileEntryUrl: s.mobile_entry_url,
+                operatingHours: s.operating_hours
+            });
+        })
+        .subscribe();
+    } catch (err) {
+        console.warn("Realtime subscription failed, falling back to local mode.");
+    }
 
     return () => {
-      supabase.removeChannel(ticketSub);
-      supabase.removeChannel(counterSub);
-      supabase.removeChannel(serviceSub);
-      supabase.removeChannel(settingsSub);
+      mounted = false;
+      if (ticketSub) supabase.removeChannel(ticketSub);
+      if (counterSub) supabase.removeChannel(counterSub);
+      if (serviceSub) supabase.removeChannel(serviceSub);
+      if (settingsSub) supabase.removeChannel(settingsSub);
     };
   }, []);
 
   // --- AUTOMATED DAILY RESET LOGIC ---
   useEffect(() => {
     const checkAndPerformReset = async () => {
+      if (isDemoMode) return;
       const today = new Date().toDateString();
       const lastResetDate = localStorage.getItem(RESET_KEY);
 
@@ -242,7 +257,7 @@ const App: React.FC = () => {
     checkAndPerformReset();
     const intervalId = setInterval(checkAndPerformReset, 60000);
     return () => clearInterval(intervalId);
-  }, []);
+  }, [isDemoMode]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -269,11 +284,9 @@ const App: React.FC = () => {
         try {
             const { userId, expiry } = JSON.parse(savedSession);
             if (!expiry || Date.now() < expiry) {
-                // We need to wait for users to be loaded, or fetch this specific user
-                // Try from local state first if populated
                 let foundUser = users.find(u => u.id === userId);
                 
-                if (!foundUser) {
+                if (!foundUser && !isDemoMode) {
                    const { data } = await supabase.from('app_users').select('*').eq('id', userId).single();
                    if (data) foundUser = mapDbUserToApp(data);
                 }
@@ -294,9 +307,8 @@ const App: React.FC = () => {
         }
         }
     };
-    // Only run when users are loaded to prevent race conditions
     if (users.length > 0) restoreSession();
-  }, [users]);
+  }, [users, isDemoMode]);
 
   // --- Theme Handlers ---
   const handleToggleTheme = () => {
@@ -314,6 +326,8 @@ const App: React.FC = () => {
         localStorage.setItem(SESSION_KEY, JSON.stringify({ userId: localUser.id, expiry }));
         return true;
     }
+
+    if (isDemoMode) return false;
 
     // 2. Fallback to DB query
     const { data, error } = await supabase
@@ -339,7 +353,7 @@ const App: React.FC = () => {
   };
 
   const handleLogout = () => {
-    if (currentUser?.role === UserRole.STAFF && staffCounterId !== null) {
+    if (currentUser?.role === UserRole.STAFF && staffCounterId !== null && !isDemoMode) {
         // Release counter in DB
         supabase.from('counters').update({ assigned_staff_id: null }).eq('id', staffCounterId).then();
         setStaffCounterId(null);
@@ -350,22 +364,28 @@ const App: React.FC = () => {
 
   // --- Admin Handlers ---
   const handleUpdateSettings = async (newSettings: SystemSettings) => {
-    const { error } = await supabase.from('system_settings').update({
-        whatsapp_enabled: newSettings.whatsappEnabled,
-        whatsapp_template: newSettings.whatsappTemplate,
-        whatsapp_api_key: newSettings.whatsappApiKey,
-        allow_mobile_entry: newSettings.allowMobileEntry,
-        mobile_entry_url: newSettings.mobileEntryUrl,
-        operating_hours: newSettings.operatingHours
-    }).eq('id', 1); // Assuming single row with ID 1
+    setSystemSettings(newSettings); // Optimistic update
+    if (!isDemoMode) {
+        const { error } = await supabase.from('system_settings').update({
+            whatsapp_enabled: newSettings.whatsappEnabled,
+            whatsapp_template: newSettings.whatsappTemplate,
+            whatsapp_api_key: newSettings.whatsappApiKey,
+            allow_mobile_entry: newSettings.allowMobileEntry,
+            mobile_entry_url: newSettings.mobileEntryUrl,
+            operating_hours: newSettings.operatingHours
+        }).eq('id', 1);
 
-    if (error) console.error("Error updating settings:", error);
-    // State update happens via realtime subscription
+        if (error) console.error("Error updating settings:", error);
+    }
   };
 
   const handleAddUser = async (newUserData: Omit<User, 'id'>) => {
-     // Generate local ID for immediate UI update in demo mode
      const tempId = `user_${Date.now()}`;
+     if (isDemoMode) {
+         setUsers(prev => [...prev, { ...newUserData, id: tempId }]);
+         return;
+     }
+
      const { error } = await supabase.from('app_users').insert({
          username: newUserData.username,
          password: newUserData.password,
@@ -375,12 +395,14 @@ const App: React.FC = () => {
      
      if (error) {
          console.error("Error adding user (DB):", error);
-         // Fallback for demo
          setUsers(prev => [...prev, { ...newUserData, id: tempId }]);
      }
   };
 
   const handleUpdateUser = async (id: string, updates: Partial<User>) => {
+    setUsers(prev => prev.map(u => u.id === id ? { ...u, ...updates } : u)); // Optimistic
+    if (isDemoMode) return;
+
     const dbUpdates: any = {};
     if (updates.name) dbUpdates.name = updates.name;
     if (updates.username) dbUpdates.username = updates.username;
@@ -388,23 +410,23 @@ const App: React.FC = () => {
     if (updates.password) dbUpdates.password = updates.password;
 
     const { error } = await supabase.from('app_users').update(dbUpdates).eq('id', id);
-    if (error) {
-        console.error("Error updating user:", error);
-        // Fallback
-        setUsers(prev => prev.map(u => u.id === id ? { ...u, ...updates } : u));
-    }
+    if (error) console.error("Error updating user:", error);
   };
 
   const handleDeleteUser = async (id: string) => {
+    setUsers(prev => prev.filter(u => u.id !== id));
+    if (isDemoMode) return;
     const { error } = await supabase.from('app_users').delete().eq('id', id);
-    if (error) {
-        console.error("Error deleting user:", error);
-        setUsers(prev => prev.filter(u => u.id !== id));
-    }
+    if (error) console.error("Error deleting user:", error);
   };
 
   const handleAddService = async (newServiceData: Omit<ServiceDefinition, 'id'>) => {
     const tempId = `srv_${Date.now()}`;
+    if (isDemoMode) {
+        setServices(prev => [...prev, { ...newServiceData, id: tempId }]);
+        return;
+    }
+
     const { error } = await supabase.from('services').insert({
         name: newServiceData.name,
         prefix: newServiceData.prefix,
@@ -417,24 +439,23 @@ const App: React.FC = () => {
   };
 
   const handleUpdateService = async (id: string, updates: Partial<ServiceDefinition>) => {
+      setServices(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
+      if (isDemoMode) return;
+
       const dbUpdates: any = {};
       if (updates.name) dbUpdates.name = updates.name;
       if (updates.prefix) dbUpdates.prefix = updates.prefix;
       if (updates.colorTheme) dbUpdates.color_theme = updates.colorTheme;
 
       const { error } = await supabase.from('services').update(dbUpdates).eq('id', id);
-      if (error) {
-          console.error("Error updating service:", error);
-          setServices(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
-      }
+      if (error) console.error("Error updating service:", error);
   };
 
   const handleDeleteService = async (id: string) => {
+      setServices(prev => prev.filter(s => s.id !== id));
+      if (isDemoMode) return;
       const { error } = await supabase.from('services').delete().eq('id', id);
-      if (error) {
-          console.error("Error deleting service:", error);
-          setServices(prev => prev.filter(s => s.id !== id));
-      }
+      if (error) console.error("Error deleting service:", error);
   };
 
   // --- Queue Logic Handlers ---
@@ -442,10 +463,24 @@ const App: React.FC = () => {
     const service = services.find(s => s.id === serviceId);
     if (!service) throw new Error("Service not found");
 
-    // Client-side count for simple sequence generation (Race condition acceptable for MVP, or use SERIAL in DB)
     const count = tickets.filter(t => t.serviceId === serviceId).length;
     const seq = count + 1;
     const number = `${service.prefix}${seq.toString().padStart(3, '0')}`;
+
+    if (isDemoMode) {
+        const newTicket: Ticket = {
+            id: `temp_${Date.now()}`,
+            number,
+            name,
+            phone,
+            serviceId,
+            serviceName: service.name,
+            status: TicketStatus.WAITING,
+            joinedAt: Date.now()
+        };
+        setTickets(prev => [...prev, newTicket]);
+        return newTicket;
+    }
 
     const { data, error } = await supabase.from('tickets').insert({
         number: number,
@@ -459,7 +494,6 @@ const App: React.FC = () => {
 
     if (error) {
         console.error("Error joining queue (DB), falling back to local:", error);
-        // Fallback ticket
         const newTicket: Ticket = {
             id: `temp_${Date.now()}`,
             number,
@@ -478,25 +512,29 @@ const App: React.FC = () => {
   };
 
   const handleCancelTicket = async (ticketId: string) => {
+    setTickets(prev => prev.map(t => t.id === ticketId ? { ...t, status: TicketStatus.CANCELLED } : t));
+    if (isDemoMode) return;
+
     const { error } = await supabase.from('tickets')
         .update({ status: TicketStatus.CANCELLED })
         .eq('id', ticketId);
-    if (error) {
-        setTickets(prev => prev.map(t => t.id === ticketId ? { ...t, status: TicketStatus.CANCELLED } : t));
-    }
+    if (error) console.error("Error cancelling ticket:", error);
   };
 
   const handleCallNext = async (counterId: number) => {
-    // 1. Find next ticket logic (Client side for candidate)
     const nextTicket = tickets
       .filter(t => t.status === TicketStatus.WAITING)
       .sort((a, b) => a.joinedAt - b.joinedAt)[0];
 
     if (!nextTicket) return;
 
-    // 2. Perform transactional update (Check if still waiting)
-    // Update Ticket
-    const { data: updatedTicket, error: ticketError } = await supabase
+    // Optimistic update
+    setTickets(prev => prev.map(t => t.id === nextTicket.id ? { ...t, status: TicketStatus.SERVING, counter: counterId, servedAt: Date.now() } : t));
+    setCounters(prev => prev.map(c => c.id === counterId ? { ...c, currentTicketId: nextTicket.id } : c));
+
+    if (isDemoMode) return;
+
+    const { error: ticketError } = await supabase
         .from('tickets')
         .update({ 
             status: TicketStatus.SERVING, 
@@ -504,62 +542,50 @@ const App: React.FC = () => {
             served_at: new Date().toISOString() 
         })
         .eq('id', nextTicket.id)
-        .eq('status', TicketStatus.WAITING) // Optimistic Lock
-        .select()
-        .single();
+        .eq('status', TicketStatus.WAITING);
     
-    // Fallback if DB fails
-    if (ticketError) {
-        console.warn("DB Update failed, forcing local update for demo");
-        setTickets(prev => prev.map(t => t.id === nextTicket.id ? { ...t, status: TicketStatus.SERVING, counter: counterId, servedAt: Date.now() } : t));
-        
-        // Update Counter Local
-        setCounters(prev => prev.map(c => c.id === counterId ? { ...c, currentTicketId: nextTicket.id } : c));
-        return;
-    }
+    if (ticketError) console.error("Error calling next ticket:", ticketError);
 
-    // Update Counter
     await supabase.from('counters')
         .update({ current_ticket_id: nextTicket.id })
         .eq('id', counterId);
   };
 
   const handleUpdateTicketStatus = async (ticketId: string, status: TicketStatus) => {
+    setTickets(prev => prev.map(t => t.id === ticketId ? { ...t, status, completedAt: status === TicketStatus.COMPLETED ? Date.now() : undefined } : t));
+    
+    const counter = counters.find(c => c.currentTicketId === ticketId);
+    if (counter) {
+        setCounters(prev => prev.map(c => c.id === counter.id ? { ...c, currentTicketId: null } : c));
+    }
+
+    if (isDemoMode) return;
+
     const updatePayload: any = { status };
     if (status === TicketStatus.COMPLETED) {
         updatePayload.completed_at = new Date().toISOString();
     }
 
     const { error } = await supabase.from('tickets').update(updatePayload).eq('id', ticketId);
+    if (error) console.error("Error updating ticket:", error);
     
-    if (error) {
-        setTickets(prev => prev.map(t => t.id === ticketId ? { ...t, status, completedAt: status === TicketStatus.COMPLETED ? Date.now() : undefined } : t));
-    }
-    
-    // Release counter
-    // Find which counter has this ticket
-    const counter = counters.find(c => c.currentTicketId === ticketId);
     if (counter) {
-        const { error: cError } = await supabase.from('counters')
-            .update({ current_ticket_id: null })
-            .eq('id', counter.id);
-        
-        if (cError) {
-             setCounters(prev => prev.map(c => c.id === counter.id ? { ...c, currentTicketId: null } : c));
-        }
+        await supabase.from('counters').update({ current_ticket_id: null }).eq('id', counter.id);
     }
   };
 
   const handleToggleCounter = async (counterId: number) => {
     const counter = counters.find(c => c.id === counterId);
     if (counter) {
-        const { error } = await supabase.from('counters')
-            .update({ is_open: !counter.isOpen })
-            .eq('id', counterId);
+        const newState = !counter.isOpen;
+        setCounters(prev => prev.map(c => c.id === counterId ? { ...c, isOpen: newState } : c));
         
-        if (error) {
-             setCounters(prev => prev.map(c => c.id === counterId ? { ...c, isOpen: !c.isOpen } : c));
-        }
+        if (isDemoMode) return;
+        
+        const { error } = await supabase.from('counters')
+            .update({ is_open: newState })
+            .eq('id', counterId);
+        if (error) console.error("Error toggling counter:", error);
     }
   };
 
@@ -568,30 +594,35 @@ const App: React.FC = () => {
       setStaffCounterId(counterId);
       if (currentUser) {
           localStorage.setItem(`nova_staff_counter_${currentUser.id}`, counterId.toString());
+          // Optimistic
+          setCounters(prev => prev.map(c => c.id === counterId ? { ...c, assignedStaffId: currentUser.id } : c));
+
+          if (isDemoMode) return;
+
           const { error } = await supabase.from('counters')
             .update({ assigned_staff_id: currentUser.id })
             .eq('id', counterId);
-          
-          if (error) {
-             setCounters(prev => prev.map(c => c.id === counterId ? { ...c, assignedStaffId: currentUser.id } : c));
-          }
+          if (error) console.error("Error selecting counter:", error);
       }
   };
 
   const handleStaffLeaveCounter = async () => {
       if (staffCounterId !== null) {
-          const { error } = await supabase.from('counters')
-            .update({ assigned_staff_id: null })
-            .eq('id', staffCounterId);
-
-          if (error) {
-             setCounters(prev => prev.map(c => c.id === staffCounterId ? { ...c, assignedStaffId: undefined } : c));
-          }
-
+          // Optimistic
+          setCounters(prev => prev.map(c => c.id === staffCounterId ? { ...c, assignedStaffId: undefined } : c));
+          
+          const oldCounterId = staffCounterId;
           setStaffCounterId(null);
           if (currentUser) {
               localStorage.removeItem(`nova_staff_counter_${currentUser.id}`);
           }
+
+          if (isDemoMode) return;
+
+          const { error } = await supabase.from('counters')
+            .update({ assigned_staff_id: null })
+            .eq('id', oldCounterId);
+          if (error) console.error("Error leaving counter:", error);
       }
   };
 
