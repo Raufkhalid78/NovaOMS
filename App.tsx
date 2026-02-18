@@ -20,6 +20,7 @@ const DEFAULT_SETTINGS: SystemSettings = {
   whatsappTemplate: "Hello {name}, your turn for {service} is coming up! Your ticket number is {number}. Please proceed to Counter {counter}.",
   allowMobileEntry: true,
   whatsappApiKey: "",
+  autoNotify15m: false,
   mobileEntryUrl: "",
   operatingHours: {
     enabled: true,
@@ -60,7 +61,7 @@ const App: React.FC = () => {
   const mapDbTicketToApp = (t: any): Ticket => ({
     id: t.id,
     number: t.number,
-    name: t.customer_name,
+    name: t.name, // FIXED: Was t.customer_name, corrected to match schema
     phone: t.phone,
     serviceId: t.service_id,
     serviceName: t.service_name,
@@ -68,7 +69,8 @@ const App: React.FC = () => {
     joinedAt: new Date(t.joined_at).getTime(),
     servedAt: t.served_at ? new Date(t.served_at).getTime() : undefined,
     completedAt: t.completed_at ? new Date(t.completed_at).getTime() : undefined,
-    counter: t.counter_id
+    counter: t.counter_id,
+    notificationSent: t.notification_sent 
   });
 
   const mapDbCounterToApp = (c: any): CounterState => ({
@@ -144,6 +146,7 @@ const App: React.FC = () => {
                 whatsappEnabled: settingsData.whatsapp_enabled,
                 whatsappTemplate: settingsData.whatsapp_template,
                 whatsappApiKey: settingsData.whatsapp_api_key,
+                autoNotify15m: settingsData.auto_notify_15m,
                 allowMobileEntry: settingsData.allow_mobile_entry,
                 mobileEntryUrl: settingsData.mobile_entry_url,
                 operatingHours: settingsData.operating_hours
@@ -176,11 +179,16 @@ const App: React.FC = () => {
         ticketSub = supabase.channel('tickets-channel')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, (payload) => {
             if (payload.eventType === 'INSERT') {
-            setTickets(prev => [...prev, mapDbTicketToApp(payload.new)]);
+                const newTicket = mapDbTicketToApp(payload.new);
+                setTickets(prev => {
+                    // Prevent duplicates if already added locally
+                    if (prev.some(t => t.id === newTicket.id)) return prev;
+                    return [...prev, newTicket];
+                });
             } else if (payload.eventType === 'UPDATE') {
-            setTickets(prev => prev.map(t => t.id === payload.new.id ? mapDbTicketToApp(payload.new) : t));
+                setTickets(prev => prev.map(t => t.id === payload.new.id ? mapDbTicketToApp(payload.new) : t));
             } else if (payload.eventType === 'DELETE') {
-            setTickets(prev => prev.filter(t => t.id !== payload.old.id));
+                setTickets(prev => prev.filter(t => t.id !== payload.old.id));
             }
         })
         .subscribe();
@@ -212,6 +220,7 @@ const App: React.FC = () => {
                 whatsappEnabled: s.whatsapp_enabled,
                 whatsappTemplate: s.whatsapp_template,
                 whatsappApiKey: s.whatsapp_api_key,
+                autoNotify15m: s.auto_notify_15m,
                 allowMobileEntry: s.allow_mobile_entry,
                 mobileEntryUrl: s.mobile_entry_url,
                 operatingHours: s.operating_hours
@@ -259,6 +268,79 @@ const App: React.FC = () => {
     const intervalId = setInterval(checkAndPerformReset, 60000);
     return () => clearInterval(intervalId);
   }, [isDemoMode]);
+
+  // --- AUTOMATED 15-MIN NOTIFICATION LOGIC ---
+  useEffect(() => {
+    // Only run this logic if the current user is an Admin (to act as the 'server' trigger)
+    // This prevents every logged-in staff/display from trying to send the same API request.
+    if (!currentUser || currentUser.role !== UserRole.ADMIN) return;
+    
+    // Check prerequisites
+    if (!systemSettings.whatsappEnabled || !systemSettings.autoNotify15m || !systemSettings.whatsappApiKey) return;
+
+    const checkAndNotify = async () => {
+        const waitingTickets = tickets.filter(t => t.status === TicketStatus.WAITING && !t.notificationSent && t.phone);
+        if (waitingTickets.length === 0) return;
+
+        const activeCountersCount = counters.filter(c => c.isOpen).length || 1;
+        
+        // Sort ALL waiting tickets to determine position
+        const sortedWaiting = [...tickets]
+            .filter(t => t.status === TicketStatus.WAITING)
+            .sort((a, b) => a.joinedAt - b.joinedAt);
+        
+        for (const ticket of waitingTickets) {
+            const position = sortedWaiting.findIndex(t => t.id === ticket.id);
+            if (position === -1) continue;
+            
+            // Calculate total service time for everyone ahead in queue
+            let totalBacklogMinutes = 0;
+            for (let i = 0; i <= position; i++) {
+                const t = sortedWaiting[i];
+                const srv = services.find(s => s.id === t.serviceId);
+                totalBacklogMinutes += (srv?.defaultWaitTime || 5);
+            }
+            
+            // Estimated time for this ticket
+            const estimatedWaitMins = Math.ceil(totalBacklogMinutes / activeCountersCount);
+            
+            // Trigger if wait time is 15 minutes or less
+            if (estimatedWaitMins <= 15) {
+                console.log(`[Auto-Notify] Sending WhatsApp to ${ticket.number}. Est wait: ${estimatedWaitMins}m`);
+                
+                try {
+                    const message = `Hello ${ticket.name}, your wait time is approximately ${estimatedWaitMins} minutes. Please be ready!`;
+                    
+                    // Mark as sent in DB first to prevent race conditions or retries
+                    await supabase.from('tickets').update({ notification_sent: true }).eq('id', ticket.id);
+
+                    // Send API request (Fire and forget)
+                    fetch('/api/send-whatsapp', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            phone: ticket.phone,
+                            message: message,
+                            ticketId: ticket.id,
+                            apiKey: systemSettings.whatsappApiKey
+                        })
+                    }).catch(err => console.error("Auto-notify API fail (expected if no backend):", err));
+                    
+                } catch (e) {
+                    console.error("Auto-notify execution error", e);
+                }
+            }
+        }
+    };
+
+    // Run check every minute
+    const interval = setInterval(checkAndNotify, 60000);
+    // Also run once immediately on mount/update to catch up
+    checkAndNotify();
+
+    return () => clearInterval(interval);
+  }, [tickets, counters, currentUser, systemSettings, services]);
+
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -371,6 +453,7 @@ const App: React.FC = () => {
             whatsapp_enabled: newSettings.whatsappEnabled,
             whatsapp_template: newSettings.whatsappTemplate,
             whatsapp_api_key: newSettings.whatsappApiKey,
+            auto_notify_15m: newSettings.autoNotify15m,
             allow_mobile_entry: newSettings.allowMobileEntry,
             mobile_entry_url: newSettings.mobileEntryUrl,
             operating_hours: newSettings.operatingHours
@@ -474,9 +557,6 @@ const App: React.FC = () => {
             .select('*', { count: 'exact', head: true })
             .eq('service_id', serviceId);
         
-        // Count represents all tickets ever created for this service (since last daily reset)
-        // This includes waiting, served, completed, cancelled. 
-        // So the new ticket is count + 1.
         seq = (count || 0) + 1;
     } else {
         const count = tickets.filter(t => t.serviceId === serviceId).length;
@@ -502,7 +582,7 @@ const App: React.FC = () => {
 
     const { data, error } = await supabase.from('tickets').insert({
         number: number,
-        customer_name: name,
+        name: name, // FIXED: Was customer_name, corrected to match schema
         phone: phone,
         service_id: serviceId,
         service_name: service.name,
@@ -526,7 +606,15 @@ const App: React.FC = () => {
         return newTicket;
     }
     
-    return mapDbTicketToApp(data);
+    // Explicitly update local state to ensure instant feedback, don't rely solely on WS
+    const newTicket = mapDbTicketToApp(data);
+    setTickets(prev => {
+        // Avoid adding if it somehow already exists
+        if (prev.some(t => t.id === newTicket.id)) return prev;
+        return [...prev, newTicket];
+    });
+
+    return newTicket;
   };
 
   const handleCancelTicket = async (ticketId: string) => {

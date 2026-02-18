@@ -22,7 +22,8 @@ import {
   Monitor,
   MessageSquare,
   Send,
-  Loader2
+  Loader2,
+  ExternalLink
 } from 'lucide-react';
 
 interface CounterViewProps {
@@ -152,11 +153,18 @@ export const CounterView: React.FC<CounterViewProps> = ({
         .replace('{service}', currentTicket.serviceName)
         .replace('{counter}', currentCounterId.toString());
 
+    // Fallback URL generator
+    const openDeepLink = () => {
+        const encodedMessage = encodeURIComponent(message);
+        const url = `https://wa.me/${currentTicket.phone?.replace(/[^0-9]/g, '')}?text=${encodedMessage}`;
+        window.open(url, '_blank');
+    };
+
     if (systemSettings.whatsappApiKey) {
         // Backend API Integration Mode
         setIsSendingNotification(true);
         try {
-            // Note: This endpoint is hypothetical. Ensure your backend matches this route.
+            // Try to hit the backend
             const response = await fetch('/api/send-whatsapp', {
                 method: 'POST',
                 headers: {
@@ -166,27 +174,27 @@ export const CounterView: React.FC<CounterViewProps> = ({
                     phone: currentTicket.phone,
                     message: message,
                     ticketId: currentTicket.id,
-                    apiKey: systemSettings.whatsappApiKey // Or handle auth via session headers
+                    apiKey: systemSettings.whatsappApiKey 
                 })
             });
 
             if (response.ok) {
                 alert('Notification sent successfully!');
             } else {
-                console.error("Failed to send notification:", await response.text());
-                alert('Failed to send notification via backend API.');
+                // If backend fails (e.g. 404 because it doesn't exist), fallback to Deep Link
+                console.warn("Backend API unavailable, falling back to Deep Link");
+                openDeepLink();
             }
         } catch (error) {
             console.error("Error sending notification:", error);
-            alert('Network error while sending notification.');
+            // Network error -> Fallback
+            openDeepLink();
         } finally {
             setIsSendingNotification(false);
         }
     } else {
-        // Fallback: Client-side Deep Link
-        const encodedMessage = encodeURIComponent(message);
-        const url = `https://wa.me/${currentTicket.phone.replace(/[^0-9]/g, '')}?text=${encodedMessage}`;
-        window.open(url, '_blank');
+        // Direct Client-side Deep Link (Default)
+        openDeepLink();
     }
   };
 
@@ -452,15 +460,16 @@ export const CounterView: React.FC<CounterViewProps> = ({
                                 onClick={sendWhatsAppNotification}
                                 disabled={isSendingNotification}
                                 className={`
-                                    p-1 rounded-full transition-colors flex items-center justify-center
+                                    p-2 rounded-full transition-colors flex items-center justify-center gap-2 text-xs font-bold
                                     ${isSendingNotification 
                                         ? 'text-slate-400 bg-slate-100 dark:bg-slate-700 cursor-not-allowed' 
                                         : 'text-emerald-500 hover:text-emerald-600 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/30'
                                     }
                                 `}
-                                title={systemSettings.whatsappApiKey ? "Send WhatsApp via Backend" : "Open WhatsApp"}
+                                title={systemSettings.whatsappApiKey ? "Send WhatsApp (Fallback to App)" : "Open WhatsApp"}
                             >
                                 {isSendingNotification ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
+                                <span>Notify</span>
                             </button>
                           )}
                       </div>

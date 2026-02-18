@@ -43,7 +43,8 @@ export const DisplayView: React.FC<DisplayViewProps> = ({ tickets, counters, ser
             // Cancel any current speaking
             window.speechSynthesis.cancel();
             
-            const text = `Ticket number ${latestServing.number}, please proceed to Counter ${latestServing.counter}`;
+            // Updated announcement to include name
+            const text = `Ticket number ${latestServing.number}, ${latestServing.name}, please proceed to Counter ${latestServing.counter}`;
             const utterance = new SpeechSynthesisUtterance(text);
             utterance.rate = 0.9; // Slightly slower for clarity
             
@@ -172,6 +173,7 @@ export const DisplayView: React.FC<DisplayViewProps> = ({ tickets, counters, ser
                    <div className="border-t border-slate-100 dark:border-slate-800 pt-4 md:pt-6">
                      <p className="text-slate-400 dark:text-slate-400 text-xs md:text-sm uppercase tracking-wider mb-1">Ticket Number</p>
                      <p className="text-4xl md:text-5xl font-bold text-blue-600 dark:text-blue-400 tracking-tighter">{ticket.number}</p>
+                     <p className="text-xl md:text-2xl font-medium text-slate-600 dark:text-slate-300 mt-2 truncate">{ticket.name}</p>
                    </div>
                 </div>
               </div>

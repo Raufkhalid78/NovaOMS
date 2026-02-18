@@ -62,6 +62,7 @@ CREATE TABLE tickets (
     served_at TIMESTAMP WITH TIME ZONE,
     completed_at TIMESTAMP WITH TIME ZONE,
     counter_id INTEGER REFERENCES counters(id),
+    notification_sent BOOLEAN DEFAULT FALSE, -- New column for auto-notification tracking
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -77,6 +78,7 @@ CREATE TABLE system_settings (
     whatsapp_enabled BOOLEAN DEFAULT TRUE,
     whatsapp_template TEXT,
     whatsapp_api_key TEXT,
+    auto_notify_15m BOOLEAN DEFAULT FALSE, -- New column for auto notification toggle
     allow_mobile_entry BOOLEAN DEFAULT TRUE,
     mobile_entry_url TEXT,
     operating_hours JSONB DEFAULT '{"enabled": true, "start": "09:00", "end": "17:00"}'::jsonb
@@ -116,10 +118,10 @@ INSERT INTO services (id, name, prefix, color_theme, default_wait_time) VALUES
 -- Users (Using IDs from constants.ts)
 INSERT INTO app_users (id, username, password, name, role) VALUES
 ('admin_1', 'admin', '1234', 'System Administrator', 'ADMIN'),
-('staff_1', 'staff1', 'password', 'Counter 1 Staff', 'STAFF'),
-('staff_2', 'staff2', 'password', 'Counter 2 Staff', 'STAFF'),
-('kiosk_1', 'kiosk', 'password', 'Main Kiosk', 'KIOSK'),
-('display_1', 'display', 'password', 'Main Display', 'DISPLAY');
+('staff_1', 'staff1', '12345', 'Counter 1 Staff', 'STAFF'),
+('staff_2', 'staff2', '12345', 'Counter 2 Staff', 'STAFF'),
+('kiosk_1', 'kiosk', '12345', 'Main Kiosk', 'KIOSK'),
+('display_1', 'display', '12345', 'Main Display', 'DISPLAY');
 
 -- Counters (1 to 4)
 INSERT INTO counters (id, is_open) VALUES

@@ -19,6 +19,7 @@ export type Ticket = {
   servedAt?: number; // timestamp
   completedAt?: number; // timestamp
   counter?: number;
+  notificationSent?: boolean; // Track if 15m alert was sent
 }
 
 export interface CounterState {
@@ -61,6 +62,7 @@ export interface SystemSettings {
   whatsappEnabled: boolean;
   whatsappTemplate: string; // e.g., "Hello {name}, your ticket {number} is ready at Counter {counter}."
   whatsappApiKey?: string; // API Key for backend integration
+  autoNotify15m: boolean; // Auto-send when wait time is ~15 mins
   allowMobileEntry: boolean;
   mobileEntryUrl?: string; // Custom URL for the QR code
   operatingHours: {

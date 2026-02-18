@@ -1031,6 +1031,23 @@ export const AdminView: React.FC<AdminViewProps> = ({
                                         <label className={`toggle-label block overflow-hidden h-6 rounded-full cursor-pointer ${localSettings.whatsappEnabled ? 'bg-emerald-200' : 'bg-slate-200 dark:bg-slate-600'}`}></label>
                                     </div>
                                 </label>
+                                
+                                {/* New Toggle for 15-min auto alert */}
+                                <label className="flex items-center justify-between cursor-pointer group mb-4 p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-100 dark:border-slate-700">
+                                    <div>
+                                        <span className="block text-sm font-medium text-slate-800 dark:text-white">Automatic 15-Min Warning</span>
+                                        <span className="block text-xs text-slate-500">Automatically send text when estimated wait is ~15m</span>
+                                    </div>
+                                    <div className="relative inline-block w-10 h-6 align-middle select-none transition duration-200 ease-in">
+                                        <input 
+                                            type="checkbox" 
+                                            checked={localSettings.autoNotify15m}
+                                            onChange={(e) => setLocalSettings({...localSettings, autoNotify15m: e.target.checked})}
+                                            className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer border-slate-300 checked:right-0 checked:border-emerald-500 checked:bg-emerald-500 right-4"
+                                        />
+                                        <label className={`toggle-label block overflow-hidden h-6 rounded-full cursor-pointer ${localSettings.autoNotify15m ? 'bg-emerald-200' : 'bg-slate-200 dark:bg-slate-600'}`}></label>
+                                    </div>
+                                </label>
 
                                 <div className="space-y-4">
                                     <div>
@@ -1045,7 +1062,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                                                 placeholder="Enter API Key provided by your backend/provider"
                                             />
                                         </div>
-                                        <p className="text-xs text-slate-400 mt-1">If set, notifications will be sent via backend API.</p>
+                                        <p className="text-xs text-slate-400 mt-1">Required for automatic notifications.</p>
                                     </div>
 
                                     <div>
