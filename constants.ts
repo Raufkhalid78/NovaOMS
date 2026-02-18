@@ -13,10 +13,10 @@ export const COLOR_THEMES = [
 ];
 
 export const INITIAL_SERVICES: ServiceDefinition[] = [
-  { id: 'srv_1', name: 'General Inquiry', prefix: 'A', colorTheme: 'blue' },
-  { id: 'srv_2', name: 'Bill Payment', prefix: 'B', colorTheme: 'emerald' },
-  { id: 'srv_3', name: 'Technical Support', prefix: 'C', colorTheme: 'amber' },
-  { id: 'srv_4', name: 'VIP Services', prefix: 'V', colorTheme: 'purple' },
+  { id: 'srv_1', name: 'General Inquiry', prefix: 'A', colorTheme: 'blue', defaultWaitTime: 5 },
+  { id: 'srv_2', name: 'Bill Payment', prefix: 'B', colorTheme: 'emerald', defaultWaitTime: 3 },
+  { id: 'srv_3', name: 'Technical Support', prefix: 'C', colorTheme: 'amber', defaultWaitTime: 15 },
+  { id: 'srv_4', name: 'VIP Services', prefix: 'V', colorTheme: 'purple', defaultWaitTime: 10 },
 ];
 
 export const INITIAL_USERS: User[] = [

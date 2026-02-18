@@ -71,7 +71,8 @@ export const DisplayView: React.FC<DisplayViewProps> = ({ tickets, counters, ser
             const total = typeCompleted.reduce((acc, t) => acc + (t.completedAt! - t.servedAt!), 0);
             avgs[service.id] = total / typeCompleted.length;
          } else {
-            avgs[service.id] = 5 * 60 * 1000; // Default 5 mins
+            // Use configured default wait time, fallback to 5 mins
+            avgs[service.id] = (service.defaultWaitTime || 5) * 60 * 1000;
          }
       });
 

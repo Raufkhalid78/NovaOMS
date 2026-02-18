@@ -82,7 +82,8 @@ const App: React.FC = () => {
     id: s.id,
     name: s.name,
     prefix: s.prefix,
-    colorTheme: s.color_theme
+    colorTheme: s.color_theme,
+    defaultWaitTime: s.default_wait_time
   });
 
   const mapDbUserToApp = (u: any): User => ({
@@ -430,7 +431,8 @@ const App: React.FC = () => {
     const { error } = await supabase.from('services').insert({
         name: newServiceData.name,
         prefix: newServiceData.prefix,
-        color_theme: newServiceData.colorTheme
+        color_theme: newServiceData.colorTheme,
+        default_wait_time: newServiceData.defaultWaitTime
     });
     if (error) {
         console.error("Error adding service:", error);
@@ -446,6 +448,7 @@ const App: React.FC = () => {
       if (updates.name) dbUpdates.name = updates.name;
       if (updates.prefix) dbUpdates.prefix = updates.prefix;
       if (updates.colorTheme) dbUpdates.color_theme = updates.colorTheme;
+      if (updates.defaultWaitTime !== undefined) dbUpdates.default_wait_time = updates.defaultWaitTime;
 
       const { error } = await supabase.from('services').update(dbUpdates).eq('id', id);
       if (error) console.error("Error updating service:", error);
@@ -463,8 +466,23 @@ const App: React.FC = () => {
     const service = services.find(s => s.id === serviceId);
     if (!service) throw new Error("Service not found");
 
-    const count = tickets.filter(t => t.serviceId === serviceId).length;
-    const seq = count + 1;
+    // Fetch exact count from DB to ensure sequential numbering without duplicates
+    let seq = 1;
+    if (!isDemoMode) {
+        const { count } = await supabase
+            .from('tickets')
+            .select('*', { count: 'exact', head: true })
+            .eq('service_id', serviceId);
+        
+        // Count represents all tickets ever created for this service (since last daily reset)
+        // This includes waiting, served, completed, cancelled. 
+        // So the new ticket is count + 1.
+        seq = (count || 0) + 1;
+    } else {
+        const count = tickets.filter(t => t.serviceId === serviceId).length;
+        seq = count + 1;
+    }
+
     const number = `${service.prefix}${seq.toString().padStart(3, '0')}`;
 
     if (isDemoMode) {

@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Ticket, ServiceDefinition, SystemSettings } from '../types';
 import { COLOR_THEMES } from '../constants';
-import { UserPlus, CheckCircle, Smartphone, XCircle, AlertTriangle, LogOut, Sun, Moon, Clock } from 'lucide-react';
+import { UserPlus, CheckCircle, Smartphone, XCircle, AlertTriangle, LogOut, Sun, Moon, Clock, Loader2 } from 'lucide-react';
 import { generateWelcomeMessage } from '../services/geminiService';
 
 interface KioskViewProps {
@@ -32,6 +32,7 @@ export const KioskView: React.FC<KioskViewProps> = ({
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
   const [generatedTicket, setGeneratedTicket] = useState<Ticket | null>(null);
   const [welcomeMsg, setWelcomeMsg] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
   
   // Operating Hours Logic
   const [isShopOpen, setIsShopOpen] = useState(true);
@@ -104,6 +105,7 @@ export const KioskView: React.FC<KioskViewProps> = ({
     setWelcomeMsg('');
     setShowCancelConfirm(false);
     setIsCancelled(false);
+    setIsProcessing(false);
   };
 
   // Cleanup on unmount
@@ -118,21 +120,29 @@ export const KioskView: React.FC<KioskViewProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedServiceId || !name) return;
+    if (!selectedServiceId || !name || isProcessing) return;
 
-    const ticket = onJoinQueue(name, selectedServiceId, phone);
-    setGeneratedTicket(ticket);
-    setStep(3);
-    
-    // Reset cancellation UI state
-    setShowCancelConfirm(false);
-    setIsCancelled(false);
+    setIsProcessing(true);
+    try {
+        const ticket = await Promise.resolve(onJoinQueue(name, selectedServiceId, phone)); // Ensure promise handling
+        setGeneratedTicket(ticket);
+        setStep(3);
+        
+        // Reset cancellation UI state
+        setShowCancelConfirm(false);
+        setIsCancelled(false);
 
-    // Generate AI welcome message
-    generateWelcomeMessage(ticket).then(setWelcomeMsg);
+        // Generate AI welcome message
+        generateWelcomeMessage(ticket).then(setWelcomeMsg);
 
-    // Start auto-reset timer
-    startResetTimer();
+        // Start auto-reset timer
+        startResetTimer();
+    } catch (error) {
+        console.error("Failed to join queue", error);
+        alert("Could not join queue. Please try again.");
+    } finally {
+        setIsProcessing(false);
+    }
   };
 
   const handleInitiateCancel = () => {
@@ -408,10 +418,17 @@ export const KioskView: React.FC<KioskViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  disabled={!name}
-                  className="flex-1 px-6 py-3 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-200 dark:shadow-blue-900/20"
+                  disabled={!name || isProcessing}
+                  className="flex-1 px-6 py-3 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-200 dark:shadow-blue-900/20 flex items-center justify-center gap-2"
                 >
-                  Get Ticket
+                  {isProcessing ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Wait...
+                    </>
+                  ) : (
+                    'Get Ticket'
+                  )}
                 </button>
               </div>
             </form>

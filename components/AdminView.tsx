@@ -79,7 +79,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
   const [statusWidgetView, setStatusWidgetView] = useState<'counters' | 'staff'>('counters');
 
   // Service Form State
-  const [newService, setNewService] = useState({ name: '', prefix: '', colorTheme: 'blue' });
+  const [newService, setNewService] = useState({ name: '', prefix: '', colorTheme: 'blue', defaultWaitTime: 5 });
   const [editingService, setEditingService] = useState<ServiceDefinition | null>(null);
 
   // User Add Form State
@@ -318,7 +318,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
     e.preventDefault();
     if (newService.name && newService.prefix) {
       onAddService(newService);
-      setNewService({ name: '', prefix: '', colorTheme: 'blue' });
+      setNewService({ name: '', prefix: '', colorTheme: 'blue', defaultWaitTime: 5 });
     }
   };
 
@@ -663,7 +663,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                                             <div className="flex justify-between items-end mb-2">
                                                 <div>
                                                     <span className="font-bold text-sm text-slate-800 dark:text-white block">{service.name}</span>
-                                                    <span className="text-[10px] text-slate-500">Avg Wait: {stats.avgWait}m</span>
+                                                    <span className="text-[10px] text-slate-500">Avg Wait: {stats.avgWait}m <span className="text-slate-400">(Default: {service.defaultWaitTime || 5}m)</span></span>
                                                 </div>
                                                 <div className="text-right">
                                                     <span className="font-bold text-sm text-slate-800 dark:text-white">{stats.total}</span>
@@ -1126,6 +1126,17 @@ export const AdminView: React.FC<AdminViewProps> = ({
                         className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm uppercase text-center" 
                     />
                     </div>
+                    <div className="w-full md:w-32">
+                        <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Default Wait (m)</label>
+                        <input 
+                            type="number"
+                            min="1"
+                            value={newService.defaultWaitTime || ''}
+                            onChange={e => setNewService({...newService, defaultWaitTime: parseInt(e.target.value) || 5})}
+                            placeholder="5" 
+                            className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm text-center" 
+                        />
+                    </div>
                     <div className="w-full md:w-40">
                     <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Color Theme</label>
                     <select 
@@ -1167,7 +1178,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                                 <Clock className="w-3 h-3" />
                                 <span className="text-[10px] uppercase tracking-wider">Wait</span>
                                 </div>
-                                <p className="font-bold text-slate-700 dark:text-slate-200">{stats.avgWait}m</p>
+                                <p className="font-bold text-slate-700 dark:text-slate-200">{stats.avgWait}m <span className="text-slate-400 text-[10px] font-normal">(Def: {service.defaultWaitTime || 5}m)</span></p>
                             </div>
                             <div className="text-center group-hover:scale-105 transition-transform">
                                 <div className="flex items-center gap-1 justify-center text-slate-400 mb-0.5">
@@ -1451,6 +1462,17 @@ export const AdminView: React.FC<AdminViewProps> = ({
                                     onChange={e => setEditingService({...editingService, prefix: e.target.value.toUpperCase()})}
                                     placeholder="X" 
                                     className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-sm uppercase text-center" 
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Default Wait (m)</label>
+                                <input 
+                                    type="number"
+                                    min="1"
+                                    value={editingService.defaultWaitTime || ''}
+                                    onChange={e => setEditingService({...editingService, defaultWaitTime: parseInt(e.target.value) || 5})}
+                                    placeholder="5" 
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-sm text-center" 
                                 />
                             </div>
                             <div>

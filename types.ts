@@ -48,6 +48,7 @@ export interface ServiceDefinition {
   name: string;
   prefix: string; // e.g., 'A', 'B'
   colorTheme: string; // e.g., 'blue', 'emerald'
+  defaultWaitTime?: number; // Default wait time in minutes per ticket
 }
 
 export interface AIInsight {
