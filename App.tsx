@@ -272,7 +272,7 @@ const App: React.FC = () => {
     return () => clearInterval(intervalId);
   }, [isDemoMode]);
 
-  // --- AUTOMATED 15-MIN NOTIFICATION LOGIC ---
+  // --- AUTOMATED NOTIFICATION LOGIC (Ending Sessions) ---
   useEffect(() => {
     // Only run this logic if the current user is an Admin (to act as the 'server' trigger)
     // This prevents every logged-in staff/display from trying to send the same API request.
@@ -282,56 +282,65 @@ const App: React.FC = () => {
     if (!systemSettings.whatsappEnabled || !systemSettings.autoNotify15m || !systemSettings.whatsappApiKey) return;
 
     const checkAndNotify = async () => {
-        const waitingTickets = tickets.filter(t => t.status === TicketStatus.WAITING && !t.notificationSent && t.phone);
+        const now = Date.now();
+
+        // 1. Identify currently serving tickets that are ending soon (<= 15 mins remaining)
+        const servingTickets = tickets.filter(t => t.status === TicketStatus.SERVING && t.servedAt);
+        
+        // Find tickets finishing within 15 mins (and not ridiculously overdue, e.g. > 2 hours ago served)
+        const endingSoonTickets = servingTickets.filter(t => {
+            const service = services.find(s => s.id === t.serviceId);
+            // Default session duration (e.g., 30 mins)
+            const sessionDuration = (service?.defaultWaitTime || 30) * 60 * 1000;
+            const elapsed = now - (t.servedAt || now);
+            const remaining = sessionDuration - elapsed;
+            
+            // Check if remaining time is 15 mins or less (and greater than -10 mins to catch slightly overdue)
+            // This threshold (15 * 60 * 1000) is what triggers the "Next" person notification
+            return remaining <= (15 * 60 * 1000) && remaining > -(10 * 60 * 1000); 
+        });
+
+        if (endingSoonTickets.length === 0) return;
+
+        // 2. For each "Ending Soon" ticket, notify the NEXT person in line
+        // We do this by mapping the count of ending tickets to the top N waiting tickets.
+        
+        // Get all waiting tickets sorted by join time (FIFO)
+        const waitingTickets = tickets
+            .filter(t => t.status === TicketStatus.WAITING && !t.notificationSent && t.phone)
+            .sort((a, b) => a.joinedAt - b.joinedAt);
+
         if (waitingTickets.length === 0) return;
 
-        const activeCountersCount = counters.filter(c => c.isOpen).length || 1;
-        
-        // Sort ALL waiting tickets to determine position
-        const sortedWaiting = [...tickets]
-            .filter(t => t.status === TicketStatus.WAITING)
-            .sort((a, b) => a.joinedAt - b.joinedAt);
-        
-        for (const ticket of waitingTickets) {
-            const position = sortedWaiting.findIndex(t => t.id === ticket.id);
-            if (position === -1) continue;
-            
-            // Calculate total service time for everyone ahead in queue
-            let totalBacklogMinutes = 0;
-            for (let i = 0; i <= position; i++) {
-                const t = sortedWaiting[i];
-                const srv = services.find(s => s.id === t.serviceId);
-                totalBacklogMinutes += (srv?.defaultWaitTime || 5);
-            }
-            
-            // Estimated time for this ticket
-            const estimatedWaitMins = Math.ceil(totalBacklogMinutes / activeCountersCount);
-            
-            // Trigger if wait time is 15 minutes or less
-            if (estimatedWaitMins <= 15) {
-                console.log(`[Auto-Notify] Sending WhatsApp to ${ticket.number}. Est wait: ${estimatedWaitMins}m`);
-                
-                try {
-                    const message = `Hello ${ticket.name}, your wait time is approximately ${estimatedWaitMins} minutes. Please be ready!`;
-                    
-                    // Mark as sent in DB first to prevent race conditions or retries
-                    await supabase.from('tickets').update({ notification_sent: true }).eq('id', ticket.id);
+        // Determine how many slots are opening up
+        const slotsOpeningCount = endingSoonTickets.length;
 
-                    // Send API request (Fire and forget)
-                    fetch('/api/send-whatsapp', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({
-                            phone: ticket.phone,
-                            message: message,
-                            ticketId: ticket.id,
-                            apiKey: systemSettings.whatsappApiKey
-                        })
-                    }).catch(err => console.error("Auto-notify API fail (expected if no backend):", err));
-                    
-                } catch (e) {
-                    console.error("Auto-notify execution error", e);
-                }
+        // Take the top N waiting tickets
+        const ticketsToNotify = waitingTickets.slice(0, slotsOpeningCount);
+
+        for (const ticket of ticketsToNotify) {
+            console.log(`[Auto-Notify] Sending "Next Up" WhatsApp to ${ticket.number}. Previous session ending.`);
+            
+            try {
+                const message = `Hello ${ticket.name}, the customer before you is finishing their session. You have approximately 15 minutes or less before your turn. Please be ready at the waiting area!`;
+                
+                // Mark as sent in DB first to prevent race conditions or retries
+                await supabase.from('tickets').update({ notification_sent: true }).eq('id', ticket.id);
+
+                // Send API request (Fire and forget)
+                fetch('/api/send-whatsapp', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        phone: ticket.phone,
+                        message: message,
+                        ticketId: ticket.id,
+                        apiKey: systemSettings.whatsappApiKey
+                    })
+                }).catch(err => console.error("Auto-notify API fail (expected if no backend):", err));
+                
+            } catch (e) {
+                console.error("Auto-notify execution error", e);
             }
         }
     };
@@ -342,7 +351,7 @@ const App: React.FC = () => {
     checkAndNotify();
 
     return () => clearInterval(interval);
-  }, [tickets, counters, currentUser, systemSettings, services]);
+  }, [tickets, currentUser, systemSettings, services]);
 
 
   useEffect(() => {

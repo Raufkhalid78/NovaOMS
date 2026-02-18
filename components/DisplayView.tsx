@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Ticket, TicketStatus, CounterState, ServiceDefinition } from '../types';
 import { COLOR_THEMES } from '../constants';
-import { MonitorPlay, Clock, LogOut, Sun, Moon, Volume2, VolumeX } from 'lucide-react';
+import { MonitorPlay, Clock, LogOut, Sun, Moon, Volume2, VolumeX, Timer } from 'lucide-react';
 
 interface DisplayViewProps {
   tickets: Ticket[];
@@ -25,10 +25,18 @@ export const DisplayView: React.FC<DisplayViewProps> = ({ tickets, counters, ser
 
   // State for dynamic wait times per service
   const [serviceEstimates, setServiceEstimates] = useState<Record<string, number>>({});
+  
+  // Force re-render every second for live timer
+  const [now, setNow] = useState(Date.now());
 
   // Audio State
   const [isMuted, setIsMuted] = useState(false);
   const lastAnnouncedRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   // TTS Effect
   useEffect(() => {
@@ -60,7 +68,7 @@ export const DisplayView: React.FC<DisplayViewProps> = ({ tickets, counters, ser
 
   useEffect(() => {
     const calculateWaitTimes = () => {
-      const now = Date.now();
+      const calcNow = Date.now();
       
       const currentlyServing = tickets.filter(t => t.status === TicketStatus.SERVING);
       const allWaiting = tickets.filter(t => t.status === TicketStatus.WAITING);
@@ -73,10 +81,9 @@ export const DisplayView: React.FC<DisplayViewProps> = ({ tickets, counters, ser
         return;
       }
 
-      // 1. Define Standard Service Time per Service (Use Configured Default Only)
+      // 1. Define Standard Session Duration per Service
       const standardTimes: Record<string, number> = {};
       services.forEach(service => {
-         // Using defaultWaitTime directly as requested, ignoring historical averages
          standardTimes[service.id] = (service.defaultWaitTime || 5) * 60 * 1000;
       });
 
@@ -85,9 +92,9 @@ export const DisplayView: React.FC<DisplayViewProps> = ({ tickets, counters, ser
 
       const servingBacklog = currentlyServing.reduce((acc, t) => {
         // If ticket served time is missing or in future, assume full standard duration
-        if (!t.servedAt || t.servedAt > now) return acc + (standardTimes[t.serviceId] || 300000);
+        if (!t.servedAt || t.servedAt > calcNow) return acc + (standardTimes[t.serviceId] || 300000);
         
-        const elapsed = now - t.servedAt;
+        const elapsed = calcNow - t.servedAt;
         const duration = standardTimes[t.serviceId] || 300000;
         // Assume at least 30 seconds remaining even if overdue
         const remaining = Math.max(30000, duration - elapsed); 
@@ -123,6 +130,32 @@ export const DisplayView: React.FC<DisplayViewProps> = ({ tickets, counters, ser
     if (!service) return 'bg-slate-100 text-slate-800 border-slate-200';
     const theme = COLOR_THEMES.find(t => t.value === service.colorTheme) || COLOR_THEMES[0];
     return theme.classes;
+  };
+
+  const formatRemainingTime = (ticket: Ticket) => {
+    if (!ticket.servedAt) return "--:--";
+    
+    const service = services.find(s => s.id === ticket.serviceId);
+    const durationMs = (service?.defaultWaitTime || 30) * 60 * 1000;
+    const elapsed = now - ticket.servedAt;
+    const remaining = Math.max(0, durationMs - elapsed);
+    
+    const minutes = Math.floor(remaining / 60000);
+    const seconds = Math.floor((remaining % 60000) / 1000);
+    
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  const getTimerColor = (ticket: Ticket) => {
+      if (!ticket.servedAt) return "text-slate-400";
+      const service = services.find(s => s.id === ticket.serviceId);
+      const durationMs = (service?.defaultWaitTime || 30) * 60 * 1000;
+      const elapsed = now - ticket.servedAt;
+      const remaining = durationMs - elapsed;
+      
+      if (remaining < 0) return "text-red-500 animate-pulse"; // Overtime
+      if (remaining < 5 * 60 * 1000) return "text-amber-500"; // < 5 mins
+      return "text-emerald-500";
   };
 
   return (
@@ -172,13 +205,27 @@ export const DisplayView: React.FC<DisplayViewProps> = ({ tickets, counters, ser
                 <div className="absolute top-0 right-0 p-4 opacity-5 dark:opacity-10">
                   <span className="text-6xl md:text-9xl font-black text-slate-900 dark:text-white">{ticket.counter}</span>
                 </div>
-                <div className="relative z-10">
-                   <p className="text-slate-500 dark:text-slate-400 text-sm md:text-lg uppercase tracking-wider font-semibold mb-2">Counter</p>
-                   <p className="text-5xl md:text-6xl font-black text-slate-900 dark:text-white mb-6 md:mb-8">{ticket.counter}</p>
+                <div className="relative z-10 flex flex-col h-full justify-between">
+                   <div>
+                        <p className="text-slate-500 dark:text-slate-400 text-sm md:text-lg uppercase tracking-wider font-semibold mb-2">Counter</p>
+                        <p className="text-5xl md:text-6xl font-black text-slate-900 dark:text-white mb-4 md:mb-6">{ticket.counter}</p>
+                   </div>
                    
                    <div className="border-t border-slate-100 dark:border-slate-800 pt-4 md:pt-6">
-                     <p className="text-slate-400 dark:text-slate-400 text-xs md:text-sm uppercase tracking-wider mb-1">Ticket Number</p>
-                     <p className="text-4xl md:text-5xl font-bold text-blue-600 dark:text-blue-400 tracking-tighter">{ticket.number}</p>
+                     <div className="flex justify-between items-end mb-2">
+                        <div>
+                             <p className="text-slate-400 dark:text-slate-400 text-xs md:text-sm uppercase tracking-wider mb-1">Ticket Number</p>
+                             <p className="text-4xl md:text-5xl font-bold text-blue-600 dark:text-blue-400 tracking-tighter">{ticket.number}</p>
+                        </div>
+                        <div className="text-right">
+                            <p className="text-[10px] uppercase tracking-wider text-slate-400 mb-1 flex items-center justify-end gap-1">
+                                <Timer className="w-3 h-3" /> Time Left
+                            </p>
+                            <p className={`text-2xl md:text-3xl font-mono font-bold ${getTimerColor(ticket)}`}>
+                                {formatRemainingTime(ticket)}
+                            </p>
+                        </div>
+                     </div>
                      <p className="text-xl md:text-2xl font-medium text-slate-600 dark:text-slate-300 mt-2 truncate">{ticket.name}</p>
                    </div>
                 </div>
